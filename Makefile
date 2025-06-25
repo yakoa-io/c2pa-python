@@ -1,7 +1,7 @@
 # For Python bindings ===========================================================
 
 # Version of C2PA to use
-C2PA_VERSION := $(shell cat c2pa-native-version.txt)
+C2PA_VERSION := "c2pa-validation"
 
 # Start from clean env: Delete `.venv`, then `python3 -m venv .venv`
 # Pre-requisite: Python virtual environment is active (source .venv/bin/activate)

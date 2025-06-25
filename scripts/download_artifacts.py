@@ -10,7 +10,7 @@ import platform
 import subprocess
 
 # Constants
-REPO_OWNER = "contentauth"
+REPO_OWNER = "yakoa"
 REPO_NAME = "c2pa-rs"
 GITHUB_API_BASE = "https://api.github.com"
 SCRIPTS_ARTIFACTS_DIR = Path("scripts/artifacts")

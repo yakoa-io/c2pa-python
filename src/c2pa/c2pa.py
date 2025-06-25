@@ -42,6 +42,8 @@ _REQUIRED_FUNCTIONS = [
     'c2pa_signer_free',
     'c2pa_ed25519_sign',
     'c2pa_signature_free',
+    'c2pa_reader_validation_status_str',
+    'c2pa_reader_validation_results_json',
 ]
 
 
@@ -349,6 +351,17 @@ _setup_function(
         ctypes.POINTER(
             ctypes.c_ubyte)], None)
 
+_setup_function(
+    _lib.c2pa_reader_validation_status_str,
+    [ctypes.POINTER(C2paReader)],
+    ctypes.c_void_p  # returns a pointer to a C string
+)
+
+_setup_function(
+    _lib.c2pa_reader_validation_results_json,
+    [ctypes.POINTER(C2paReader)],  # Argument: pointer to C2paReader
+    ctypes.c_void_p                # Return: pointer to C string
+)
 
 class C2paError(Exception):
     """Exception raised for C2PA errors."""
@@ -1203,6 +1216,24 @@ class Reader:
         result = _lib.c2pa_reader_json(self._reader)
         return _parse_operation_result_for_error(result)
 
+    @classmethod
+    def from_bytes(cls, format: str, data: bytes, manifest_data: Optional[bytes] = None) -> "Reader":
+        """
+        Create a Reader from raw bytes (not a stream).
+
+        Args:
+            format: The MIME type or extension (e.g., "image/png")
+            data: The file contents as bytes
+            manifest_data: Optional manifest data in bytes
+
+        Returns:
+            Reader: A new Reader instance
+
+        Raises:
+            C2paError: If there was an error creating the reader
+        """
+        # Wrap the bytes in a BytesIO and use the normal constructor
+        return cls(format, stream=BytesIO(data), manifest_data=manifest_data)
     def resource_to_stream(self, uri: str, stream: Any) -> int:
         """Write a resource to a stream.
 
@@ -1232,6 +1263,77 @@ class Reader:
 
             return result
 
+    def get_active_manifest(self) -> dict:
+        """
+        Returns the active manifest as a Python dictionary.
+
+        Returns:
+            dict: The active manifest
+
+        Raises:
+            C2paError: If the reader is closed or the manifest is missing.
+        """
+        manifest_store = json.loads(self.json())
+        active_id = manifest_store.get("active_manifest")
+        if not active_id:
+            raise C2paError("No active_manifest found in manifest store")
+        manifests = manifest_store.get("manifests", {})
+        if active_id not in manifests:
+            raise C2paError(f"Active manifest ID '{active_id}' not found in manifests")
+        return manifests[active_id]
+    
+    def validation_status_str(self) -> str:
+        if not self._reader:
+            raise C2paError("Reader is closed")
+        result = _lib.c2pa_reader_validation_status_str(self._reader)
+        print("Raw result pointer:", result)
+        if not result:
+            error = _parse_operation_result_for_error(_lib.c2pa_error())
+            if error:
+                raise C2paError(error)
+            print("Returning empty string because result is null")
+            return ""
+        py_string = ctypes.cast(result, ctypes.c_char_p).value
+        print("Decoded value:", py_string)
+        if py_string is None:
+            print("Warning: Decoded value is None")
+            _lib.c2pa_string_free(result)
+            return ""
+        decoded = py_string.decode('utf-8')
+        _lib.c2pa_string_free(result)
+        print("Returning decoded string:", decoded)
+        return decoded
+    
+
+    def validation_results_json(self) -> str:
+        """
+        Returns the validation results as a JSON string.
+
+        Returns:
+            str: The validation results in JSON format, or "None" if not available.
+
+        Raises:
+            C2paError: If the reader is closed or the call fails.
+        """
+        if not self._reader:
+            raise C2paError("Reader is closed")
+        # Call the FFI function
+        result = _lib.c2pa_reader_validation_results_json(self._reader)
+        if not result:
+            # If result is null, check for an error and raise if present
+            error = _parse_operation_result_for_error(_lib.c2pa_error())
+            if error:
+                raise C2paError(error)
+            return ""
+        # Convert the C string to a Python string
+        py_string = ctypes.cast(result, ctypes.c_char_p).value
+        if py_string is None:
+            _lib.c2pa_string_free(result)
+            return ""
+        decoded = py_string.decode('utf-8')
+        # Free the C string allocated by Rust
+        _lib.c2pa_string_free(result)
+        return decoded
 
 class Signer:
     """High-level wrapper for C2PA Signer operations."""
